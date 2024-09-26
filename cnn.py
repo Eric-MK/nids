@@ -1,9 +1,13 @@
+import argparse
+import sys
+import time
 import tensorflow as tf
 import numpy as np
 import random as rn
 import os
 import csv
 import pprint
+from parser import dataset_to_list_of_fragments, parse_labels, process_live_traffic
 from util_functions import *
 # Seed Random Numbers
 os.environ['PYTHONHASHSEED']=str(SEED)
@@ -20,7 +24,7 @@ from sklearn.utils import shuffle
 from tensorflow.keras.callbacks import EarlyStopping, ModelCheckpoint
 from tensorflow.keras.wrappers.scikit_learn import KerasClassifier
 from sklearn.model_selection import GridSearchCV, RandomizedSearchCV
-from lucid_dataset_parser import *
+from parser import *
 
 import tensorflow.keras.backend as K
 tf.random.set_seed(SEED)
