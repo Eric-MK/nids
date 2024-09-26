@@ -5,6 +5,7 @@ from tensorflow.keras.layers import Conv1D, MaxPooling1D, Flatten, Dense, Dropou
 from tensorflow.keras.optimizers import Adam
 from tensorflow.keras.callbacks import EarlyStopping, ModelCheckpoint
 from sklearn.metrics import classification_report, confusion_matrix
+import matplotlib.pyplot as plt
 import h5py
 import os
 
@@ -16,8 +17,8 @@ tf.random.set_seed(42)
 DATA_PATH = "./data/DOS2019_pcaps/"
 MODEL_PATH = "./models/"
 BATCH_SIZE = 32
-EPOCHS = 3
-LEARNING_RATE = 0.0001
+EPOCHS = 4
+LEARNING_RATE = 0.000001
 
 def load_data(file_path):
     with h5py.File(file_path, 'r') as hf:
@@ -44,7 +45,7 @@ def train_model(model, X_train, y_train, X_val, y_val):
                   loss='binary_crossentropy',
                   metrics=['accuracy'])
 
-    early_stopping = EarlyStopping(monitor='val_loss', patience=5, restore_best_weights=True)
+    early_stopping = EarlyStopping(monitor='val_loss', patience=10, restore_best_weights=True)
     model_checkpoint = ModelCheckpoint(os.path.join(MODEL_PATH, 'best_model.keras'), 
                                        save_best_only=True, monitor='val_accuracy')
 
@@ -69,6 +70,29 @@ def evaluate_model(model, X_test, y_test):
     print("\nConfusion Matrix:")
     print(confusion_matrix(y_test, y_pred_classes))
 
+def plot_training_history(history):
+    plt.figure(figsize=(12, 4))
+    
+    plt.subplot(1, 2, 1)
+    plt.plot(history.history['loss'], label='Training Loss')
+    plt.plot(history.history['val_loss'], label='Validation Loss')
+    plt.title('Model Loss')
+    plt.xlabel('Epoch')
+    plt.ylabel('Loss')
+    plt.legend()
+    
+    plt.subplot(1, 2, 2)
+    plt.plot(history.history['accuracy'], label='Training Accuracy')
+    plt.plot(history.history['val_accuracy'], label='Validation Accuracy')
+    plt.title('Model Accuracy')
+    plt.xlabel('Epoch')
+    plt.ylabel('Accuracy')
+    plt.legend()
+    
+    plt.tight_layout()
+    plt.savefig(os.path.join(MODEL_PATH, 'training_history.png'))
+    plt.show()
+
 def main():
     # Load data
     X_train, y_train = load_data(os.path.join(DATA_PATH, "10t-100n-DOS2019-dataset-train.hdf5"))
@@ -85,6 +109,9 @@ def main():
     model.summary()
 
     history = train_model(model, X_train, y_train, X_val, y_val)
+
+    # Plot training history
+    plot_training_history(history)
 
     # Evaluate the model
     evaluate_model(model, X_test, y_test)
