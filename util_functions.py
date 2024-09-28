@@ -28,6 +28,34 @@ feature_list = OrderedDict([
     ('ICMP_type',[0,1<<8])]
 )
 
+def reshape_data_for_cnn_lstm(X, y, max_flow_len, n_features):
+    """
+    Reshape data for CNN+LSTM model.
+    X shape: (n_samples, max_flow_len, n_features)
+    Returns:
+    - X_cnn: (n_samples, max_flow_len, n_features, 1) for CNN
+    - X_lstm: (n_samples, max_flow_len, n_features) for LSTM
+    - y: (n_samples,) labels
+    """
+    X_cnn = np.expand_dims(X, axis=-1)
+    X_lstm = X
+    return X_cnn, X_lstm, y
+
+def save_data_for_cnn_lstm(X_cnn, X_lstm, y, filename):
+    """Save data in HDF5 format for CNN+LSTM model"""
+    with h5py.File(filename, 'w') as hf:
+        hf.create_dataset('X_cnn', data=X_cnn)
+        hf.create_dataset('X_lstm', data=X_lstm)
+        hf.create_dataset('y', data=y)
+
+def load_data_for_cnn_lstm(filename):
+    """Load data from HDF5 format for CNN+LSTM model"""
+    with h5py.File(filename, 'r') as hf:
+        X_cnn = np.array(hf['X_cnn'])
+        X_lstm = np.array(hf['X_lstm'])
+        y = np.array(hf['y'])
+    return X_cnn, X_lstm, y
+
 def load_dataset(path):
     filename = glob.glob(path)[0]
     dataset = h5py.File(filename, "r")

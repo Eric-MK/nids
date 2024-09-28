@@ -10,6 +10,7 @@ import ipaddress
 from sklearn.feature_extraction.text import CountVectorizer
 from multiprocessing import Process, Manager
 from util_functions import *
+from util_functions import reshape_data_for_cnn_lstm, save_data_for_cnn_lstm
 import os
 
 DOS2019_FLOWS = {'attackers': ['172.16.0.5'], 'victims': ['192.168.50.1', '192.168.50.4']}
@@ -423,7 +424,7 @@ def main(argv):
         if len(preprocessed_flows) == 0:
             print("Empty dataset!")
             exit()
-
+            
         if not args.no_split:
             preprocessed_train, preprocessed_test = train_test_split(preprocessed_flows, train_size=TRAIN_SIZE, shuffle=True)
             preprocessed_train, preprocessed_val = train_test_split(preprocessed_train, train_size=TRAIN_SIZE, shuffle=True)
@@ -446,55 +447,39 @@ def main(argv):
         output_file = output_folder + '/' + str(time_window) + 't-' + str(max_flow_len) + 'n-' + dataset_id + '-dataset'
         if args.no_split:
             norm_X_full = normalize_and_padding(X_full, mins, maxs, max_flow_len)
-            norm_X_full_np = np.array(norm_X_full)
-            y_full_np = np.array(y_full)
+            X_full_cnn, X_full_lstm, y_full_np = reshape_data_for_cnn_lstm(np.array(norm_X_full), np.array(y_full), max_flow_len, len(feature_list))
 
-            hf = h5py.File(output_file + '-full.hdf5', 'w')
-            hf.create_dataset('set_x', data=norm_X_full_np)
-            hf.create_dataset('set_y', data=y_full_np)
-            hf.close()
+            save_data_for_cnn_lstm(X_full_cnn, X_full_lstm, y_full_np, output_file + '-full-cnn-lstm.hdf5')
 
-            [full_packets] = count_packets_in_dataset([norm_X_full_np])
+            [full_packets] = count_packets_in_dataset([X_full_cnn])
             log_string = time.strftime("%Y-%m-%d %H:%M:%S") + " | Total examples (tot,ben,ddos):(" + str(total_examples) + "," + str(total_benign_examples) + "," + str(total_ddos_examples) + \
-                         ") | Total packets:(" + str(full_packets) + \
-                         ") | options:" + command_options + " |\n"
+                        ") | Total packets:(" + str(full_packets) + \
+                        ") | options:" + command_options + " |\n"
         else:
             norm_X_train = normalize_and_padding(X_train, mins, maxs, max_flow_len)
             norm_X_val = normalize_and_padding(X_val, mins, maxs, max_flow_len)
             norm_X_test = normalize_and_padding(X_test, mins, maxs, max_flow_len)
 
-            norm_X_train_np = np.array(norm_X_train)
-            y_train_np = np.array(y_train)
-            norm_X_val_np = np.array(norm_X_val)
-            y_val_np = np.array(y_val)
-            norm_X_test_np = np.array(norm_X_test)
-            y_test_np = np.array(y_test)
+            X_train_cnn, X_train_lstm, y_train_np = reshape_data_for_cnn_lstm(np.array(norm_X_train), np.array(y_train), max_flow_len, len(feature_list))
+            X_val_cnn, X_val_lstm, y_val_np = reshape_data_for_cnn_lstm(np.array(norm_X_val), np.array(y_val), max_flow_len, len(feature_list))
+            X_test_cnn, X_test_lstm, y_test_np = reshape_data_for_cnn_lstm(np.array(norm_X_test), np.array(y_test), max_flow_len, len(feature_list))
 
-            hf = h5py.File(output_file + '-train.hdf5', 'w')
-            hf.create_dataset('set_x', data=norm_X_train_np)
-            hf.create_dataset('set_y', data=y_train_np)
-            hf.close()
+            save_data_for_cnn_lstm(X_train_cnn, X_train_lstm, y_train_np, output_file + '-train-cnn-lstm.hdf5')
+            save_data_for_cnn_lstm(X_val_cnn, X_val_lstm, y_val_np, output_file + '-val-cnn-lstm.hdf5')
+            save_data_for_cnn_lstm(X_test_cnn, X_test_lstm, y_test_np, output_file + '-test-cnn-lstm.hdf5')
 
-            hf = h5py.File(output_file + '-val.hdf5', 'w')
-            hf.create_dataset('set_x', data=norm_X_val_np)
-            hf.create_dataset('set_y', data=y_val_np)
-            hf.close()
-
-            hf = h5py.File(output_file + '-test.hdf5', 'w')
-            hf.create_dataset('set_x', data=norm_X_test_np)
-            hf.create_dataset('set_y', data=y_test_np)
-            hf.close()
-
-            [train_packets, val_packets, test_packets] = count_packets_in_dataset([norm_X_train_np, norm_X_val_np, norm_X_test_np])
+            [train_packets, val_packets, test_packets] = count_packets_in_dataset([X_train_cnn, X_val_cnn, X_test_cnn])
             log_string = time.strftime("%Y-%m-%d %H:%M:%S") + " | examples (tot,ben,ddos):(" + str(total_examples) + "," + str(total_benign_examples) + "," + str(total_ddos_examples) + \
-                         ") | Train/Val/Test sizes: (" + str(norm_X_train_np.shape[0]) + "," + str(norm_X_val_np.shape[0]) + "," + str(norm_X_test_np.shape[0]) + \
-                         ") | Packets (train,val,test):(" + str(train_packets) + "," + str(val_packets) + "," + str(test_packets) + \
-                         ") | options:" + command_options + " |\n"
+                        ") | Train/Val/Test sizes: (" + str(X_train_cnn.shape[0]) + "," + str(X_val_cnn.shape[0]) + "," + str(X_test_cnn.shape[0]) + \
+                        ") | Packets (train,val,test):(" + str(train_packets) + "," + str(val_packets) + "," + str(test_packets) + \
+                        ") | options:" + command_options + " |\n"
 
         print(log_string)
 
         with open(output_folder + '/history.log', "a") as myfile:
             myfile.write(log_string)
+
+
 
     if args.dataset_folder is None and args.preprocess_folder is None and args.preprocess_file is None:
         print("Please specify either a dataset folder, preprocess folder, or preprocess file!")
