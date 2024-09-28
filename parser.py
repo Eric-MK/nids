@@ -375,7 +375,7 @@ def main(argv):
     if args.preprocess_folder is not None or args.preprocess_file is not None:
         if args.preprocess_folder is not None:
             output_folder = args.output_folder[0] if args.output_folder is not None else args.preprocess_folder[0]
-            filelist = glob.glob(args.preprocess_folder[0] + '/*.data')
+            filelist = glob.glob(os.path.join(args.preprocess_folder[0], '*.data'))
         else:
             output_folder = args.output_folder[0] if args.output_folder is not None else os.path.dirname(os.path.realpath(args.preprocess_file[0]))
             filelist = args.preprocess_file
@@ -384,10 +384,19 @@ def main(argv):
         max_flow_len = None
         dataset_id = None
         for file in filelist:
-            filename = file.split('/')[-1].strip()
-            current_time_window = int(filename.split('-')[0].strip().replace('t', ''))
-            current_max_flow_len = int(filename.split('-')[1].strip().replace('n', ''))
-            current_dataset_id = str(filename.split('-')[2].strip())
+            filename = os.path.basename(file)
+            if not filename.endswith('.data'):
+                print(f"Skipping file with unexpected format: {filename}")
+                continue
+            try:
+                parts = filename.split('-')
+                current_time_window = int(parts[0].replace('t', ''))
+                current_max_flow_len = int(parts[1].replace('n', ''))
+                current_dataset_id = parts[2]
+            except (IndexError, ValueError) as e:
+                print(f"Error parsing filename {filename}: {str(e)}")
+                continue
+
             if time_window is not None and current_time_window != time_window:
                 print("Inconsistent time windows!")
                 exit()
