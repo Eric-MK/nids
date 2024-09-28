@@ -44,7 +44,7 @@ def reshape_data_for_cnn_lstm(X, y, max_flow_len, n_features):
     """
     X_cnn = np.expand_dims(X, axis=-1)
     X_lstm = X
-    return X_cnn, X_lstm, 
+    return X_cnn, X_lstm, y 
 
 def save_data_for_cnn_lstm(X_cnn, X_lstm, y, filename):
     """Save data in HDF5 format for CNN+LSTM model"""
