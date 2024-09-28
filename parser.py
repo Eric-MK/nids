@@ -1,3 +1,4 @@
+import math
 import sys
 import time
 import pyshark
@@ -30,6 +31,8 @@ class packet_features:
         self.id_fwd = (0,0,0,0,0) # 5-tuple src_ip_addr, src_port,dst_ip_addr,dst_port,protocol
         self.id_bwd = (0,0,0,0,0) # 5-tuple src_ip_addr, src_port,dst_ip_addr,dst_port,protocol
         self.features_list = []
+        self.payload = []  # New: store packet payload
+        self.inter_arrival_time = 0  # New: inter-arrival time
 
     def __str__(self):
         return "{} -> {}".format(self.id_fwd, self.features_list)
@@ -73,47 +76,42 @@ def parse_labels(dataset_type=None, attackers=None, victims=None, label=1):
 
     return output_dict
 
-def parse_packet(pkt):
+def parse_packet(pkt, prev_time):
     pf = packet_features()
     tmp_id = [0,0,0,0,0]
-
     try:
-        pf.features_list.append(float(pkt.sniff_timestamp))
-        pf.features_list.append(int(pkt.ip.len))
-        pf.features_list.append(int(hashlib.sha256(str(pkt.highest_layer).encode('utf-8')).hexdigest(), 16) % 10 ** 8)
-        pf.features_list.append(int(int(pkt.ip.flags, 16)))
+        current_time = float(pkt.sniff_timestamp)
+        pf.features_list = [
+            current_time,
+            int(pkt.ip.len),
+            int(hashlib.sha256(str(pkt.highest_layer).encode('utf-8')).hexdigest(), 16) % 10 ** 8,
+            int(int(pkt.ip.flags, 16)),
+            calculate_entropy(bytes.fromhex(pkt.tcp.payload.replace(':', ''))) if hasattr(pkt, 'tcp') and hasattr(pkt.tcp, 'payload') else (calculate_entropy(bytes.fromhex(pkt.udp.payload.replace(':', ''))) if hasattr(pkt, 'udp') and hasattr(pkt.udp, 'payload') else 0),
+            int(pkt.ip.ttl),
+            int(np.dot(np.array(vector_proto.transform([pkt.frame_info.protocols]).toarray().tolist()[0]), powers_of_two)),
+            int(pkt.tcp.len) if hasattr(pkt, 'tcp') else 0,
+            int(pkt.tcp.ack) if hasattr(pkt, 'tcp') else 0,
+            int(pkt.tcp.flags, 16) if hasattr(pkt, 'tcp') else 0,
+            int(pkt.tcp.window_size_value) if hasattr(pkt, 'tcp') else 0,
+            int(pkt.tcp.stream) if hasattr(pkt, 'tcp') else 0,
+            int(pkt.tcp.seq) if hasattr(pkt, 'tcp') else 0,
+            int(pkt.udp.length) if hasattr(pkt, 'udp') else 0,
+            int(pkt.icmp.type) if hasattr(pkt, 'icmp') else 0,
+            current_time - prev_time if prev_time is not None else 0
+        ]
+
+        # Set tmp_id values
         tmp_id[0] = str(pkt.ip.src)
         tmp_id[2] = str(pkt.ip.dst)
+        tmp_id[4] = int(pkt.ip.proto)
 
-        protocols = vector_proto.transform([pkt.frame_info.protocols]).toarray().tolist()[0]
-        protocols = [1 if i >= 1 else 0 for i in protocols]
-        protocols_value = int(np.dot(np.array(protocols), powers_of_two))
-        pf.features_list.append(protocols_value)
-
-        protocol = int(pkt.ip.proto)
-        tmp_id[4] = protocol
-        if pkt.transport_layer != None:
-            if protocol == socket.IPPROTO_TCP:
-                tmp_id[1] = int(pkt.tcp.srcport)
-                tmp_id[3] = int(pkt.tcp.dstport)
-                pf.features_list.append(int(pkt.tcp.len))
-                pf.features_list.append(int(pkt.tcp.ack))
-                pf.features_list.append(int(pkt.tcp.flags, 16))
-                pf.features_list.append(int(pkt.tcp.window_size_value))
-                pf.features_list = pf.features_list + [0, 0]  # UDP + ICMP positions
-            elif protocol == socket.IPPROTO_UDP:
-                pf.features_list = pf.features_list + [0, 0, 0, 0]  # TCP positions
-                tmp_id[1] = int(pkt.udp.srcport)
-                pf.features_list.append(int(pkt.udp.length))
-                tmp_id[3] = int(pkt.udp.dstport)
-                pf.features_list = pf.features_list + [0]  # ICMP position
-        elif protocol == socket.IPPROTO_ICMP:
-            pf.features_list = pf.features_list + [0, 0, 0, 0, 0]  # TCP and UDP positions
-            pf.features_list.append(int(pkt.icmp.type))
-        else:
-            pf.features_list = pf.features_list + [0, 0, 0, 0, 0, 0]  # padding for layer3-only packets
-            tmp_id[4] = 0
-
+        if hasattr(pkt, 'tcp'):
+            tmp_id[1] = int(pkt.tcp.srcport)
+            tmp_id[3] = int(pkt.tcp.dstport)
+        elif hasattr(pkt, 'udp'):
+            tmp_id[1] = int(pkt.udp.srcport)
+            tmp_id[3] = int(pkt.udp.dstport)
+        
         pf.id_fwd = (tmp_id[0], tmp_id[1], tmp_id[2], tmp_id[3], tmp_id[4])
         pf.id_bwd = (tmp_id[2], tmp_id[3], tmp_id[0], tmp_id[1], tmp_id[4])
 
@@ -122,6 +120,18 @@ def parse_packet(pkt):
     except AttributeError as e:
         # ignore packets that aren't TCP/UDP or IPv4
         return None
+
+def calculate_entropy(data):
+    if not data:
+        return 0
+    entropy = 0
+    for x in range(256):
+        p_x = data.count(x) / len(data)
+        if p_x > 0:
+            entropy += - p_x * math.log(p_x, 2)
+    return entropy
+
+
 
 def process_pcap(pcap_file, dataset_type, in_labels, max_flow_len, labelled_flows, max_flows=0, traffic_type='all', time_window=TIME_WINDOW):
     start_time = time.time()
@@ -132,6 +142,7 @@ def process_pcap(pcap_file, dataset_type, in_labels, max_flow_len, labelled_flow
     print("Processing file: ", pcap_name)
 
     cap = pyshark.FileCapture(pcap_file)
+    prev_time = None
     for i, pkt in enumerate(cap):
         if i % 1000 == 0:
             print(pcap_name + " packet #", i)
@@ -139,7 +150,8 @@ def process_pcap(pcap_file, dataset_type, in_labels, max_flow_len, labelled_flow
         if start_time_window == -1 or float(pkt.sniff_timestamp) > start_time_window + time_window:
             start_time_window = float(pkt.sniff_timestamp)
 
-        pf = parse_packet(pkt)
+        pf = parse_packet(pkt, prev_time)
+        prev_time = float(pkt.sniff_timestamp)
         store_packet(pf, temp_dict, start_time_window, max_flow_len)
         if max_flows > 0 and len(temp_dict) >= max_flows:
             break

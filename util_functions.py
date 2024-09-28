@@ -19,14 +19,19 @@ feature_list = OrderedDict([
     ('packet_length',[0,1<<16]),
     ('highest_layer',[0,1<<32]),
     ('IP_flags',[0,1<<16]),
+    ('payload_entropy', [0, 8]),  # New: Entropy is between 0 and 8 bits
+    ('TTL', [0, 255]),  # New: TTL is between 0 and 255
     ('protocols',[0,1<<len(protocols)]),
     ('TCP_length',[0,1<<16]),
     ('TCP_ack',[0,1<<32]),
     ('TCP_flags',[0,1<<16]),
     ('TCP_window_size',[0,1<<16]),
+    ('TCP_stream', [0, 1<<32]),  # New: TCP stream identifier
+    ('TCP_seq', [0, 1<<32]),  # New: TCP sequence number
     ('UDP_length',[0,1<<16]),
-    ('ICMP_type',[0,1<<8])]
-)
+    ('ICMP_type',[0,1<<8]),
+    ('inter_arrival_time', [0, 1])  # New: Normalized inter-arrival time
+])
 
 def reshape_data_for_cnn_lstm(X, y, max_flow_len, n_features):
     """
@@ -39,7 +44,7 @@ def reshape_data_for_cnn_lstm(X, y, max_flow_len, n_features):
     """
     X_cnn = np.expand_dims(X, axis=-1)
     X_lstm = X
-    return X_cnn, X_lstm, y
+    return X_cnn, X_lstm, 
 
 def save_data_for_cnn_lstm(X_cnn, X_lstm, y, filename):
     """Save data in HDF5 format for CNN+LSTM model"""
@@ -115,17 +120,24 @@ def find_min_max(X,time_window=10):
 
     return min_array,max_array
 
-def normalize_and_padding(X,mins,maxs,max_flow_len,padding=True):
+def normalize_and_padding(X, mins, maxs, max_flow_len, padding=True):
     norm_X = []
     for sample in X:
-        if sample.shape[0] > max_flow_len: # if the sample is bigger than expected, we cut the sample
+        if sample.shape[0] > max_flow_len:
             sample = sample[:max_flow_len,...]
-        packet_nr = sample.shape[0] # number of packets in one sample
+        packet_nr = sample.shape[0]
 
         norm_sample = scale_linear_bycolumn(sample, mins, maxs, high=1.0, low=0.0)
-        np.nan_to_num(norm_sample, copy=False)  # remove NaN from the array
-        if padding == True:
-            norm_sample = np.pad(norm_sample, ((0, max_flow_len - packet_nr), (0, 0)), 'constant',constant_values=(0, 0))  # padding
+        np.nan_to_num(norm_sample, copy=False)
+        
+        # Normalize inter-arrival time
+        if packet_nr > 1:
+            max_inter_arrival = np.max(norm_sample[1:, -1])
+            if max_inter_arrival > 0:
+                norm_sample[1:, -1] /= max_inter_arrival
+
+        if padding:
+            norm_sample = np.pad(norm_sample, ((0, max_flow_len - packet_nr), (0, 0)), 'constant', constant_values=(0, 0))
         norm_X.append(norm_sample)
     return norm_X
 
